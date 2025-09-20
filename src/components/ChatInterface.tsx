@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { default as remarkGfm } from 'remark-gfm';
+import { default as rehypeRaw } from 'rehype-raw';
 import AIService from '../services/aiService';
 import KnowledgeBaseService from '../services/knowledgeBaseService';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -23,7 +26,6 @@ interface Message {
   type: 'user' | 'bot';
   content: string;
   timestamp: Date;
-  language: string;
   language: string;
 }
 
@@ -52,9 +54,9 @@ const sampleQueries = {
 
 // Default AI configuration
 const defaultAIConfig: AIConfig = {
-  apiKey: '',
-  googleDocsUrl: '',
-  isConfigured: false
+  apiKey: import.meta.env.VITE_OPENROUTER_API_KEY || '',
+  googleDocsUrl: import.meta.env.VITE_GOOGLE_DOCS_URL || '',
+  isConfigured: true
 };
 
 export function ChatInterface() {
@@ -136,7 +138,6 @@ export function ChatInterface() {
       type: 'user',
       content: content,
       timestamp: new Date(),
-      language: selectedLanguage
       language: selectedLanguage
     };
 
@@ -413,7 +414,6 @@ export function ChatInterface() {
 
                 {/* Mobile Menu Button */}
                 {isMobile && (
-                {isMobile && (
                   <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="sm">
@@ -429,7 +429,6 @@ export function ChatInterface() {
                       </div>
                     </SheetContent>
                   </Sheet>
-                )}
                 )}
               </div>
             </div>
@@ -463,7 +462,38 @@ export function ChatInterface() {
                           : 'bg-muted text-muted-foreground'
                       }`}
                     >
-                      <p className="text-sm sm:text-base leading-relaxed">{message.content}</p>
+                      {message.type === 'bot' ? (
+                        <div className="prose prose-sm w-full max-w-full overflow-x-auto">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw]}
+                            components={{
+                              table: ({node, ...props}) => (
+                                <table className="min-w-full border border-gray-300 text-sm text-left rounded-lg overflow-x-auto">{props.children}</table>
+                              ),
+                              th: ({node, ...props}) => (
+                                <th className="border px-2 py-1 bg-blue-100 font-bold text-blue-700">{props.children}</th>
+                              ),
+                              td: ({node, ...props}) => {
+                                // Highlight important keywords
+                                const highlightKeywords = [
+                                  'Specializations', 'Eligibility', 'Fees', 'Duration', 'Program', 'Admission', 'B.Tech', 'ICT', 'CSE', 'CE', 'Mechanical Engineering', 'Civil Engineering', 'Computer Science', 'Information Communication Technology'
+                                ];
+                                let content = String(props.children);
+                                highlightKeywords.forEach(keyword => {
+                                  const regex = new RegExp(`(${keyword})`, 'gi');
+                                  content = content.replace(regex, '<span style="color:#d97706;font-weight:bold;">$1</span>');
+                                });
+                                return <td className="border px-2 py-1" dangerouslySetInnerHTML={{__html: content}} />;
+                              },
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="text-sm sm:text-base leading-relaxed">{message.content}</p>
+                      )}
                       <div className="flex items-center gap-1.5 sm:gap-2 mt-1 opacity-60">
                         <Badge variant="outline" className="text-xs px-1 py-0">
                           {languages.find(l => l.code === message.language)?.flag}

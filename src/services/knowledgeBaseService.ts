@@ -1,15 +1,8 @@
 class KnowledgeBaseService {
-  private knowledgeBase: string = '';
-  private lastFetchTime: number = 0;
-  private cacheTimeout: number = 5 * 60 * 1000; // 5 minutes
+  // Always fetch latest knowledge base; no caching
 
   async fetchFromGoogleDocs(docUrl: string): Promise<string> {
     try {
-      // Check if we have cached data that's still fresh
-      if (this.knowledgeBase && (Date.now() - this.lastFetchTime) < this.cacheTimeout) {
-        return this.knowledgeBase;
-      }
-
       // Extract document ID from Google Docs URL
       const docId = this.extractDocId(docUrl);
       if (!docId) {
@@ -18,7 +11,7 @@ class KnowledgeBaseService {
 
       // Convert to plain text export URL
       const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-      
+
       const response = await fetch(exportUrl, {
         method: 'GET',
         mode: 'cors'
@@ -29,13 +22,9 @@ class KnowledgeBaseService {
       }
 
       const text = await response.text();
-      this.knowledgeBase = this.processKnowledgeBase(text);
-      this.lastFetchTime = Date.now();
-      
-      return this.knowledgeBase;
+      return this.processKnowledgeBase(text);
     } catch (error) {
       console.error('Error fetching knowledge base:', error);
-      
       // Return default knowledge base if fetch fails
       return this.getDefaultKnowledgeBase();
     }
@@ -118,7 +107,8 @@ CONTACT INFORMATION:
   }
 
   getKnowledgeBase(): string {
-    return this.knowledgeBase || this.getDefaultKnowledgeBase();
+  // Always return default if not fetched
+  return this.getDefaultKnowledgeBase();
   }
 }
 
