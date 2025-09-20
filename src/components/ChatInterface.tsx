@@ -35,6 +35,7 @@ const languages = [
   { code: 'mr', name: 'मराठी', flag: '🇮🇳' },
   { code: 'te', name: 'తెలుగు', flag: '🇮🇳' },
   { code: 'ta', name: 'தமிழ்', flag: '🇮🇳' },
+  { code: 'gu', name: 'ગુજરાતી', flag: '🇮🇳' },
 ];
 
 const sampleQueries = {
