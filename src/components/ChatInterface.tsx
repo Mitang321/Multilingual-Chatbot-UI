@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import AIService from '../services/aiService';
+import KnowledgeBaseService from '../services/knowledgeBaseService';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,9 +10,11 @@ import { ScrollArea } from './ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
-import { Send, Bot, User, Globe, Phone, AlertCircle, Menu, Volume2, VolumeX } from 'lucide-react';
+import { Send, Bot, User, Globe, Phone, AlertCircle, Menu, Volume2, VolumeX, Settings } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from './AuthContext';
+import { AIConfigDialog, AIConfig } from './AIConfigDialog';
+import { toast } from 'sonner';
 import { VoiceButton } from './VoiceButton';
 import { useIsMobile } from './ui/use-mobile';
 
@@ -19,6 +23,7 @@ interface Message {
   type: 'user' | 'bot';
   content: string;
   timestamp: Date;
+  language: string;
   language: string;
 }
 
@@ -45,6 +50,13 @@ const sampleQueries = {
   ]
 };
 
+// Default AI configuration
+const defaultAIConfig: AIConfig = {
+  apiKey: '',
+  googleDocsUrl: '',
+  isConfigured: false
+};
+
 export function ChatInterface() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -63,6 +75,14 @@ export function ChatInterface() {
       language: 'en'
     }
   ]);
+  
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
+    const saved = localStorage.getItem('ai_config');
+    return saved ? JSON.parse(saved) : defaultAIConfig;
+  });
+  const [showAIConfig, setShowAIConfig] = useState(false);
+  const [aiService, setAiService] = useState<AIService | null>(null);
+  const [knowledgeBaseService] = useState(new KnowledgeBaseService());
   const [currentMessage, setCurrentMessage] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [isTyping, setIsTyping] = useState(false);
@@ -72,6 +92,32 @@ export function ChatInterface() {
   const [lastBotResponse, setLastBotResponse] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Initialize AI service when config changes
+  useEffect(() => {
+    if (aiConfig.isConfigured && aiConfig.apiKey) {
+      const service = new AIService(aiConfig.apiKey);
+      setAiService(service);
+      
+      // Load knowledge base
+      if (aiConfig.googleDocsUrl) {
+        knowledgeBaseService.fetchFromGoogleDocs(aiConfig.googleDocsUrl)
+          .then(knowledgeBase => {
+            service.setKnowledgeBase(knowledgeBase);
+            toast.success('Knowledge base loaded successfully!');
+          })
+          .catch(error => {
+            console.error('Failed to load knowledge base:', error);
+            service.setKnowledgeBase(knowledgeBaseService.getKnowledgeBase());
+            toast.warning('Using default knowledge base');
+          });
+      } else {
+        service.setKnowledgeBase(knowledgeBaseService.getKnowledgeBase());
+      }
+    } else {
+      setAiService(null);
+    }
+  }, [aiConfig, knowledgeBaseService]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -91,6 +137,7 @@ export function ChatInterface() {
       content: content,
       timestamp: new Date(),
       language: selectedLanguage
+      language: selectedLanguage
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -98,58 +145,63 @@ export function ChatInterface() {
     setIsTyping(true);
 
     // Simulate bot response
-    setTimeout(() => {
-      const responses = {
-        en: {
-          fee: "Fee payment deadlines are: Semester fees by 15th of each month, Annual fees by March 31st. Late fees apply after deadline.",
-          scholarship: "Scholarships available: Merit-based (applications open Sept 1-30), Need-based (applications open year-round), Sports scholarships (applications due by June 15th).",
-          timetable: "New semester starts on January 15th, 2024. Class schedules will be published on the college portal by January 1st.",
-          default: "I understand you're asking about campus services. Could you please be more specific? You can ask about fees, scholarships, timetables, or admissions."
-        },
-        hi: {
-          fee: "फीस भुगतान की अंतिम तारीखें: सेमेस्टर फीस हर महीने की 15 तारीख तक, वार्षिक फीस 31 मार्च तक। देरी से भुगतान पर अतिरिक्त शुल्क लगेगा।",
-          scholarship: "उपलब्ध छात्रवृत्तियां: मेधा आधारित (आवेदन 1-30 सितंबर), आवश्यकता आधारित (पूरे वर्ष आवेदन), खेल छात्रवृत्ति (15 जून तक आवेदन)।",
-          timetable: "नया सेमेस्टर 15 जनवरी 2024 से शुरू होगा। कक्षा का समय-सारणी 1 जनवरी तक कॉलेज पोर्टल पर प्रकाशित होगा।",
-          default: "मैं समझ गया कि आप कैंपस सेवाओं के बारे में पूछ रहे हैं। कृपया अधिक स्पष्ट करें? आप फीस, छात्रवृत्ति, समय-सारणी, या प्रवेश के बारे में पूछ सकते हैं।"
-        }
-      };
+    if (aiService && aiConfig.isConfigured) {
+      // Use AI service for response
+      try {
+        const conversationHistory = messages.slice(-10).map(msg => ({
+          role: msg.type === 'user' ? 'user' as const : 'assistant' as const,
+          content: msg.content
+        }));
+        
+        const response = await aiService.sendMessage(content, selectedLanguage, conversationHistory);
+        
+        const botMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: 'bot',
+          content: response,
+          timestamp: new Date(),
+          language: selectedLanguage
+        };
 
-      let responseText = '';
-      const msgLower = content.toLowerCase();
-      
-      if (msgLower.includes('fee') || msgLower.includes('फीस')) {
-        responseText = responses[selectedLanguage as keyof typeof responses]?.fee || responses.en.fee;
-      } else if (msgLower.includes('scholarship') || msgLower.includes('छात्रवृत्ति')) {
-        responseText = responses[selectedLanguage as keyof typeof responses]?.scholarship || responses.en.scholarship;
-      } else if (msgLower.includes('timetable') || msgLower.includes('schedule') || msgLower.includes('समय')) {
-        responseText = responses[selectedLanguage as keyof typeof responses]?.timetable || responses.en.timetable;
-      } else {
-        responseText = responses[selectedLanguage as keyof typeof responses]?.default || responses.en.default;
-        // Show fallback option for complex queries
-        if (Math.random() > 0.7) {
-          setShowFallback(true);
+        setMessages(prev => [...prev, botMessage]);
+        setLastBotResponse(response);
+        
+        // Auto-speak bot response if enabled
+        if (autoSpeakEnabled) {
+          setTimeout(() => {
+            handleSpeakResponse(response);
+          }, 500);
         }
+      } catch (error) {
+        console.error('AI response error:', error);
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: 'bot',
+          content: selectedLanguage === 'hi' 
+            ? "मुझे खुशी है कि आपने पूछा, लेकिन अभी मुझे कुछ तकनीकी समस्या हो रही है। कृपया कुछ देर बाद पुनः प्रयास करें।"
+            : "I apologize, but I'm experiencing some technical difficulties right now. Please try again in a moment.",
+          timestamp: new Date(),
+          language: selectedLanguage
+        };
+        setMessages(prev => [...prev, errorMessage]);
       }
-
-      const botMessage: Message = {
+    } else {
+      // Fallback to dummy responses if AI is not configured
+      setTimeout(() => {
+        const fallbackMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: responseText,
+        content: selectedLanguage === 'hi' 
+          ? "AI सेवा कॉन्फ़िगर नहीं है। कृपया व्यवस्थापक से संपर्क करें।"
+          : "AI service is not configured. Please contact the administrator to set up the AI integration.",
         timestamp: new Date(),
         language: selectedLanguage
       };
-
-      setMessages(prev => [...prev, botMessage]);
-      setIsTyping(false);
-      setLastBotResponse(responseText); // Store for voice chat
-      
-      // Auto-speak bot response if enabled
-      if (autoSpeakEnabled) {
-        setTimeout(() => {
-          handleSpeakResponse(responseText);
-        }, 500); // Small delay to let the message appear first
-      }
-    }, 1500);
+      setMessages(prev => [...prev, fallbackMessage]);
+      }, 1000);
+    }
+    
+    setIsTyping(false);
   };
 
   const handleQuickQuery = (query: string) => {
@@ -203,6 +255,16 @@ export function ChatInterface() {
     setShowFallback(false);
   };
 
+  const handleAIConfigSave = (config: AIConfig) => {
+    setAiConfig(config);
+    localStorage.setItem('ai_config', JSON.stringify(config));
+    toast.success('AI configuration saved successfully!');
+  };
+
+  const handleOpenAIConfig = () => {
+    setShowAIConfig(true);
+  };
+
   // Sidebar content component
   const SidebarContent = () => (
     <div className="space-y-6">
@@ -210,6 +272,7 @@ export function ChatInterface() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
+            Quick Queries
             Quick Queries
           </CardTitle>
         </CardHeader>
@@ -226,6 +289,30 @@ export function ChatInterface() {
                 {query}
               </Button>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* AI Configuration Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            AI Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">AI Status</span>
+              <Badge variant={aiConfig.isConfigured ? "default" : "outline"}>
+                {aiConfig.isConfigured ? "Configured" : "Not Configured"}
+              </Badge>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleOpenAIConfig} className="w-full">
+              <Settings className="h-4 w-4 mr-2" />
+              Configure AI
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -326,6 +413,7 @@ export function ChatInterface() {
 
                 {/* Mobile Menu Button */}
                 {isMobile && (
+                {isMobile && (
                   <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="sm">
@@ -341,6 +429,7 @@ export function ChatInterface() {
                       </div>
                     </SheetContent>
                   </Sheet>
+                )}
                 )}
               </div>
             </div>
@@ -475,6 +564,14 @@ export function ChatInterface() {
         onSpeakResponse={handleSpeakResponse}
         lastBotResponse={lastBotResponse}
         variant="floating"
+      />
+      
+      {/* AI Configuration Dialog */}
+      <AIConfigDialog
+        open={showAIConfig}
+        onOpenChange={setShowAIConfig}
+        onConfigSave={handleAIConfigSave}
+        currentConfig={aiConfig}
       />
     </div>
   );
