@@ -32,7 +32,8 @@ class AIService {
       'hi': 'Respond in Hindi (हिंदी)',
       'mr': 'Respond in Marathi (मराठी)',
       'te': 'Respond in Telugu (తెలుగు)',
-      'ta': 'Respond in Tamil (தமிழ்)'
+      'ta': 'Respond in Tamil (தமிழ்)',
+      'gu': 'Respond in Gujarati (ગુજરાતી)'
     };
 
   return `You are a campus assistant for Marwadi University, Rajkot, Gujarat. Only use the information provided in the knowledge base below (from Google Docs) to answer questions. Do NOT make predictions, guesses, summaries, or provide information not found in the knowledge base. If you do not find any relevant data in the knowledge base, reply ONLY: "Sorry, I do not have that information. Please contact the campus at info@marwadiuniversity.ac.in or call +91-281-2924155.". Always give clear, direct answers from the knowledge base only.
